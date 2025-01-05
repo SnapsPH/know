@@ -114,7 +114,7 @@ Settings are stored in `know-bot.json` and can be managed through the interactiv
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/darkbing/knowledge-retrieval.git
+git clone https://github.com/SnapsPH/know.git
 cd knowledge-retrieval
 ```
 
@@ -143,7 +143,7 @@ MIT License - see LICENSE file for details.
 
 ## Support
 
-- GitHub Issues: [Report a bug](https://github.com/darkbing/knowledge-retrieval/issues)
+- GitHub Issues: [Report a bug](https://github.com/SnapsPH/know/issues)
 - Email: [your-email@example.com](mailto:your-email@example.com)
 
 ## Changelog
