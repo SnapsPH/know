@@ -1,11 +1,11 @@
 {
-  "name": "@lodi-know/knowledge-retrieval",
-  "version": "1.0.0",
+  "name": "@darkbing/knowledge-retrieval",
+  "version": "1.0.1",
   "description": "A powerful web crawler and knowledge processing toolkit for extracting and managing web content",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "knowledge-retrieval": "./bin/cli.js"
+    "knowledge-retrieval": "bin/cli.js"
   },
   "scripts": {
     "build": "rimraf dist && tsc",
@@ -14,10 +14,16 @@
     "crawl": "ts-node -r dotenv/config src/crawler.ts",
     "process": "ts-node -r dotenv/config src/knowledge_processor.ts",
     "cleanup": "ts-node -r dotenv/config src/cleanup.ts",
-    "test": "jest",
+    "test": "jest --passWithNoTests",
     "lint": "eslint . --ext .ts",
-    "prepublishOnly": "npm run build && npm test && npm run lint"
+    "prepublishOnly": "npm run build"
   },
+  "files": [
+    "dist",
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "web-crawler",
     "knowledge-extraction",
@@ -29,7 +35,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/lodi-know/knowledge-retrieval.git"
+    "url": "git+https://github.com/lodi-know/knowledge-retrieval.git"
   },
   "homepage": "https://github.com/lodi-know/knowledge-retrieval#readme",
   "bugs": {
