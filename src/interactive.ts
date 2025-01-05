@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs-extra';
 import * as os from 'os';
+import { SettingsManager, KnowBotSettings } from './settings';
 
 // Extend inquirer types to include our custom prompts
 interface CustomPrompt {
@@ -18,11 +19,13 @@ class KnowledgeInteractiveCLI {
   private basePath: string;
   private rawDataPath: string;
   private processedDataPath: string;
+  private settings: SettingsManager;
 
   constructor() {
     this.basePath = process.cwd();
     this.rawDataPath = path.resolve(this.basePath, 'raw_data');
     this.processedDataPath = path.resolve(this.basePath, 'processed_data');
+    this.settings = new SettingsManager();
   }
 
   async start() {
@@ -41,6 +44,7 @@ class KnowledgeInteractiveCLI {
           'Cleanup Resources',
           'Batch Process',
           'View Existing Resources',
+          'Manage Settings',
           'Exit'
         ]
       }
@@ -61,6 +65,9 @@ class KnowledgeInteractiveCLI {
         break;
       case 'View Existing Resources':
         await this.viewResources();
+        break;
+      case 'Manage Settings':
+        await this.manageSettings();
         break;
       case 'Exit':
         console.log('Goodbye! 👋');
@@ -348,6 +355,228 @@ class KnowledgeInteractiveCLI {
 
     console.log('Batch processing completed!');
     await this.start();
+  }
+
+  async manageSettings() {
+    while (true) {
+      // Get fresh settings each time
+      const currentSettings = this.settings.getSettings();
+      
+      const { action } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'action',
+          message: 'Settings Management',
+          choices: [
+            { name: '👀 View Current Settings', value: 'view' },
+            { name: '✏️ Edit Settings', value: 'edit' },
+            { name: '🔄 Reset to Defaults', value: 'reset' },
+            { name: '↩️ Back to Main Menu', value: 'back' }
+          ]
+        }
+      ]);
+
+      if (action === 'back') break;
+
+      switch (action) {
+        case 'view':
+          console.log('\nCurrent Settings:');
+          console.log(JSON.stringify(currentSettings, null, 2));
+          break;
+
+        case 'edit':
+          await this.editSettings();
+          break;
+
+        case 'reset':
+          const { confirm } = await inquirer.prompt([
+            {
+              type: 'confirm',
+              name: 'confirm',
+              message: 'Are you sure you want to reset all settings to defaults?',
+              default: false
+            }
+          ]);
+          
+          if (confirm) {
+            await this.settings.resetToDefaults();
+          }
+          break;
+      }
+    }
+  }
+
+  async editSettings() {
+    // Get fresh settings
+    const currentSettings = this.settings.getSettings();
+    
+    const { section } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'section',
+        message: 'Which settings would you like to edit?',
+        choices: [
+          { name: '🕷️ Crawler Settings', value: 'crawler' },
+          { name: '📁 Storage Settings', value: 'storage' },
+          { name: '⚙️ Processing Settings', value: 'processing' },
+          { name: '🔧 Custom Headers', value: 'headers' }
+        ]
+      }
+    ]);
+
+    let updates: Partial<KnowBotSettings> = {};
+
+    switch (section) {
+      case 'crawler': {
+        const crawlerSettings = await inquirer.prompt([
+          {
+            type: 'number',
+            name: 'maxCrawlDepth',
+            message: 'Maximum crawl depth:',
+            default: currentSettings.maxCrawlDepth
+          },
+          {
+            type: 'number',
+            name: 'maxCrawlPages',
+            message: 'Maximum pages to crawl:',
+            default: currentSettings.maxCrawlPages
+          },
+          {
+            type: 'number',
+            name: 'requestTimeout',
+            message: 'Request timeout (ms):',
+            default: currentSettings.requestTimeout
+          },
+          {
+            type: 'input',
+            name: 'userAgent',
+            message: 'User Agent:',
+            default: currentSettings.userAgent
+          }
+        ]);
+        updates = crawlerSettings;
+        break;
+      }
+
+      case 'storage': {
+        const storageSettings = await inquirer.prompt([
+          {
+            type: 'input',
+            name: 'baseStoragePath',
+            message: 'Base storage path:',
+            default: currentSettings.baseStoragePath
+          },
+          {
+            type: 'input',
+            name: 'rawDataDir',
+            message: 'Raw data directory:',
+            default: currentSettings.rawDataDir
+          },
+          {
+            type: 'input',
+            name: 'processedDataDir',
+            message: 'Processed data directory:',
+            default: currentSettings.processedDataDir
+          }
+        ]);
+        updates = storageSettings;
+        break;
+      }
+
+      case 'processing': {
+        const processingSettings = await inquirer.prompt([
+          {
+            type: 'list',
+            name: 'defaultProcessingMode',
+            message: 'Default processing mode:',
+            choices: ['markdown', 'json'],
+            default: currentSettings.defaultProcessingMode
+          },
+          {
+            type: 'input',
+            name: 'modelName',
+            message: 'Model name:',
+            default: currentSettings.modelName
+          }
+        ]);
+        updates = processingSettings;
+        break;
+      }
+
+      case 'headers': {
+        // Initialize headers with existing headers or empty object
+        const headers: Record<string, string> = currentSettings.headers ?? {};
+        
+        while (true) {
+          // Show current headers if any exist
+          if (Object.keys(headers).length > 0) {
+            console.log('\nCurrent Headers:');
+            Object.entries(headers).forEach(([key, value]) => {
+              console.log(`${key}: ${value}`);
+            });
+            console.log('');
+          }
+
+          const { action } = await inquirer.prompt([
+            {
+              type: 'list',
+              name: 'action',
+              message: 'Custom Headers Management',
+              choices: [
+                { name: 'Add Header', value: 'add' },
+                ...(Object.keys(headers).length > 0 ? [{ name: 'Remove Header', value: 'remove' }] : []),
+                { name: 'Done', value: 'done' }
+              ]
+            }
+          ]);
+
+          if (action === 'done') break;
+
+          if (action === 'add') {
+            const { key, value } = await inquirer.prompt([
+              {
+                type: 'input',
+                name: 'key',
+                message: 'Header name:',
+                validate: (input: string) => {
+                  if (!input.trim()) return 'Header name cannot be empty';
+                  return true;
+                }
+              },
+              {
+                type: 'input',
+                name: 'value',
+                message: 'Header value:',
+                validate: (input: string) => {
+                  if (!input.trim()) return 'Header value cannot be empty';
+                  return true;
+                }
+              }
+            ]);
+            headers[key.trim()] = value.trim();
+            console.log(`✅ Added header: ${key}`);
+          } else if (action === 'remove') {
+            const { key } = await inquirer.prompt([
+              {
+                type: 'list',
+                name: 'key',
+                message: 'Select header to remove:',
+                choices: Object.keys(headers)
+              }
+            ]);
+            delete headers[key];
+            console.log(`🗑️ Removed header: ${key}`);
+          }
+        }
+        
+        updates = { headers };
+        break;
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await this.settings.updateSettings(updates);
+    }
   }
 }
 

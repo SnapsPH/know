@@ -40,11 +40,13 @@ const inquirer_1 = __importDefault(require("inquirer"));
 const child_process_1 = require("child_process");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs-extra"));
+const settings_1 = require("./settings");
 class KnowledgeInteractiveCLI {
     constructor() {
         this.basePath = process.cwd();
         this.rawDataPath = path.resolve(this.basePath, 'raw_data');
         this.processedDataPath = path.resolve(this.basePath, 'processed_data');
+        this.settings = new settings_1.SettingsManager();
     }
     async start() {
         console.clear();
@@ -61,6 +63,7 @@ class KnowledgeInteractiveCLI {
                     'Cleanup Resources',
                     'Batch Process',
                     'View Existing Resources',
+                    'Manage Settings',
                     'Exit'
                 ]
             }
@@ -80,6 +83,9 @@ class KnowledgeInteractiveCLI {
                 break;
             case 'View Existing Resources':
                 await this.viewResources();
+                break;
+            case 'Manage Settings':
+                await this.manageSettings();
                 break;
             case 'Exit':
                 console.log('Goodbye! 👋');
@@ -335,6 +341,213 @@ class KnowledgeInteractiveCLI {
         }
         console.log('Batch processing completed!');
         await this.start();
+    }
+    async manageSettings() {
+        while (true) {
+            // Get fresh settings each time
+            const currentSettings = this.settings.getSettings();
+            const { action } = await inquirer_1.default.prompt([
+                {
+                    type: 'list',
+                    name: 'action',
+                    message: 'Settings Management',
+                    choices: [
+                        { name: '👀 View Current Settings', value: 'view' },
+                        { name: '✏️ Edit Settings', value: 'edit' },
+                        { name: '🔄 Reset to Defaults', value: 'reset' },
+                        { name: '↩️ Back to Main Menu', value: 'back' }
+                    ]
+                }
+            ]);
+            if (action === 'back')
+                break;
+            switch (action) {
+                case 'view':
+                    console.log('\nCurrent Settings:');
+                    console.log(JSON.stringify(currentSettings, null, 2));
+                    break;
+                case 'edit':
+                    await this.editSettings();
+                    break;
+                case 'reset':
+                    const { confirm } = await inquirer_1.default.prompt([
+                        {
+                            type: 'confirm',
+                            name: 'confirm',
+                            message: 'Are you sure you want to reset all settings to defaults?',
+                            default: false
+                        }
+                    ]);
+                    if (confirm) {
+                        await this.settings.resetToDefaults();
+                    }
+                    break;
+            }
+        }
+    }
+    async editSettings() {
+        // Get fresh settings
+        const currentSettings = this.settings.getSettings();
+        const { section } = await inquirer_1.default.prompt([
+            {
+                type: 'list',
+                name: 'section',
+                message: 'Which settings would you like to edit?',
+                choices: [
+                    { name: '🕷️ Crawler Settings', value: 'crawler' },
+                    { name: '📁 Storage Settings', value: 'storage' },
+                    { name: '⚙️ Processing Settings', value: 'processing' },
+                    { name: '🔧 Custom Headers', value: 'headers' }
+                ]
+            }
+        ]);
+        let updates = {};
+        switch (section) {
+            case 'crawler': {
+                const crawlerSettings = await inquirer_1.default.prompt([
+                    {
+                        type: 'number',
+                        name: 'maxCrawlDepth',
+                        message: 'Maximum crawl depth:',
+                        default: currentSettings.maxCrawlDepth
+                    },
+                    {
+                        type: 'number',
+                        name: 'maxCrawlPages',
+                        message: 'Maximum pages to crawl:',
+                        default: currentSettings.maxCrawlPages
+                    },
+                    {
+                        type: 'number',
+                        name: 'requestTimeout',
+                        message: 'Request timeout (ms):',
+                        default: currentSettings.requestTimeout
+                    },
+                    {
+                        type: 'input',
+                        name: 'userAgent',
+                        message: 'User Agent:',
+                        default: currentSettings.userAgent
+                    }
+                ]);
+                updates = crawlerSettings;
+                break;
+            }
+            case 'storage': {
+                const storageSettings = await inquirer_1.default.prompt([
+                    {
+                        type: 'input',
+                        name: 'baseStoragePath',
+                        message: 'Base storage path:',
+                        default: currentSettings.baseStoragePath
+                    },
+                    {
+                        type: 'input',
+                        name: 'rawDataDir',
+                        message: 'Raw data directory:',
+                        default: currentSettings.rawDataDir
+                    },
+                    {
+                        type: 'input',
+                        name: 'processedDataDir',
+                        message: 'Processed data directory:',
+                        default: currentSettings.processedDataDir
+                    }
+                ]);
+                updates = storageSettings;
+                break;
+            }
+            case 'processing': {
+                const processingSettings = await inquirer_1.default.prompt([
+                    {
+                        type: 'list',
+                        name: 'defaultProcessingMode',
+                        message: 'Default processing mode:',
+                        choices: ['markdown', 'json'],
+                        default: currentSettings.defaultProcessingMode
+                    },
+                    {
+                        type: 'input',
+                        name: 'modelName',
+                        message: 'Model name:',
+                        default: currentSettings.modelName
+                    }
+                ]);
+                updates = processingSettings;
+                break;
+            }
+            case 'headers': {
+                // Initialize headers with existing headers or empty object
+                const headers = currentSettings.headers ?? {};
+                while (true) {
+                    // Show current headers if any exist
+                    if (Object.keys(headers).length > 0) {
+                        console.log('\nCurrent Headers:');
+                        Object.entries(headers).forEach(([key, value]) => {
+                            console.log(`${key}: ${value}`);
+                        });
+                        console.log('');
+                    }
+                    const { action } = await inquirer_1.default.prompt([
+                        {
+                            type: 'list',
+                            name: 'action',
+                            message: 'Custom Headers Management',
+                            choices: [
+                                { name: 'Add Header', value: 'add' },
+                                ...(Object.keys(headers).length > 0 ? [{ name: 'Remove Header', value: 'remove' }] : []),
+                                { name: 'Done', value: 'done' }
+                            ]
+                        }
+                    ]);
+                    if (action === 'done')
+                        break;
+                    if (action === 'add') {
+                        const { key, value } = await inquirer_1.default.prompt([
+                            {
+                                type: 'input',
+                                name: 'key',
+                                message: 'Header name:',
+                                validate: (input) => {
+                                    if (!input.trim())
+                                        return 'Header name cannot be empty';
+                                    return true;
+                                }
+                            },
+                            {
+                                type: 'input',
+                                name: 'value',
+                                message: 'Header value:',
+                                validate: (input) => {
+                                    if (!input.trim())
+                                        return 'Header value cannot be empty';
+                                    return true;
+                                }
+                            }
+                        ]);
+                        headers[key.trim()] = value.trim();
+                        console.log(`✅ Added header: ${key}`);
+                    }
+                    else if (action === 'remove') {
+                        const { key } = await inquirer_1.default.prompt([
+                            {
+                                type: 'list',
+                                name: 'key',
+                                message: 'Select header to remove:',
+                                choices: Object.keys(headers)
+                            }
+                        ]);
+                        delete headers[key];
+                        console.log(`🗑️ Removed header: ${key}`);
+                    }
+                }
+                updates = { headers };
+                break;
+            }
+        }
+        if (Object.keys(updates).length > 0) {
+            await this.settings.updateSettings(updates);
+        }
     }
 }
 // Ensure the class is exported as default

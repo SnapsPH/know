@@ -1,0 +1,11 @@
+{
+  "maxCrawlDepth": 3,
+  "maxCrawlPages": 50,
+  "requestTimeout": 5000,
+  "userAgent": "KnowledgeRetrievalBot/1.0",
+  "baseStoragePath": "D:\\apps\\cascade-extender\\knowledge_retrieval\\knowledge_retrieval",
+  "rawDataDir": "raw_data",
+  "processedDataDir": "processed_data",
+  "defaultProcessingMode": "markdown",
+  "modelName": "llama3.2:3b"
+}
