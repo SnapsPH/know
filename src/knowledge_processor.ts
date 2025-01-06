@@ -2,6 +2,9 @@ import axios from 'axios';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as cheerio from 'cheerio';
+import * as winston from 'winston';
+import * as os from 'os';
+import { createLogger, logError } from './logger';
 
 export interface ProcessedKnowledge {
   source: string;
@@ -14,6 +17,7 @@ export class KnowledgeProcessor {
   private ollamaModel: string;
   private rawDataPath: string;
   private processedDataPath: string;
+  private logger: winston.Logger;
 
   constructor(
     ollamaUrl: string,
@@ -23,64 +27,210 @@ export class KnowledgeProcessor {
   ) {
     this.ollamaUrl = ollamaUrl;
     this.ollamaModel = ollamaModel;
-    this.rawDataPath = path.resolve(rawDataPath, 'raw_data');
-    this.processedDataPath = path.resolve(processedDataPath, 'processed_data');
+
+    // Determine the most appropriate base path
+    const basePath = this.findAppropriateBasePath([
+      process.cwd(),
+      path.dirname(process.execPath),
+      os.homedir()
+    ]);
+
+    // Resolve paths with multiple fallback strategies
+    this.rawDataPath = this.resolveDataPath(
+      basePath, 
+      rawDataPath, 
+      'raw_data'
+    );
+    this.processedDataPath = this.resolveDataPath(
+      basePath, 
+      processedDataPath, 
+      'processed_data'
+    );
     
-    fs.ensureDirSync(this.processedDataPath);
+    // Create module-specific logger
+    this.logger = createLogger('knowledge-processor');
+
+    // Ensure data directories exist
+    try {
+      fs.ensureDirSync(this.rawDataPath);
+      fs.ensureDirSync(path.join(this.processedDataPath, 'docs'));
+      fs.ensureDirSync(path.join(this.processedDataPath, 'json'));
+
+      this.logger.info(`Initialized processor for model: ${ollamaModel}`);
+      this.logger.info(`Raw data path: ${this.rawDataPath}`);
+      this.logger.info(`Processed data path: ${this.processedDataPath}`);
+    } catch (error) {
+      logError(this.logger, 'Failed to create data directories', error as Error);
+    }
+  }
+
+  private findAppropriateBasePath(basePaths: string[]): string {
+    for (const basePath of basePaths) {
+      try {
+        // Attempt to create a test directory
+        const testDir = path.join(basePath, '.know-bot-test');
+        fs.ensureDirSync(testDir);
+        fs.removeSync(testDir);
+        return basePath;
+      } catch {
+        // If path is not writable, continue to next
+        continue;
+      }
+    }
+
+    // Fallback to home directory if no writable path found
+    return os.homedir();
+  }
+
+  private resolveDataPath(
+    basePath: string, 
+    providedPath: string, 
+    defaultDirName: string
+  ): string {
+    // Possible path variations
+    const possiblePaths = [
+      providedPath,
+      path.join(basePath, 'knowledge_retrieval', defaultDirName),
+      path.join(basePath, defaultDirName),
+      path.join(basePath, 'knowledge_retrieval'),
+      basePath
+    ];
+
+    // Find first path that can be created or exists
+    for (const dataPath of possiblePaths) {
+      try {
+        const fullPath = path.join(dataPath, defaultDirName);
+        fs.ensureDirSync(fullPath);
+        return fullPath;
+      } catch {
+        continue;
+      }
+    }
+
+    // Absolute fallback
+    const fallbackPath = path.join(basePath, defaultDirName);
+    fs.ensureDirSync(fallbackPath);
+    return fallbackPath;
   }
 
   async processRawData(
     resourceName: string, 
     mode: 'docs' | 'json' = 'docs'
   ): Promise<ProcessedKnowledge[]> {
-    const rawDataPath = path.join(this.rawDataPath, resourceName);
+    // Determine the correct raw data path
+    let rawDataPath = path.join(this.rawDataPath, resourceName);
     const processedDataPath = path.join(this.processedDataPath, mode, resourceName);
     
+    this.logger.info(`Attempting to process resource: ${resourceName}`);
+    this.logger.info(`Raw data path: ${rawDataPath}`);
+    this.logger.info(`Processed data path: ${processedDataPath}`);
+    
     // Ensure processed data directory exists
-    fs.ensureDirSync(processedDataPath);
+    try {
+      fs.ensureDirSync(processedDataPath);
+    } catch (error) {
+      logError(this.logger, 'Failed to create processed data directory', error as Error);
+      throw error;
+    }
+    
+    // Check if raw data directory exists
+    if (!fs.existsSync(rawDataPath)) {
+      this.logger.warn(`Raw data directory not found: ${rawDataPath}`);
+      this.logger.warn(`Current working directory: ${process.cwd()}`);
+      
+      // List and check potential alternative paths
+      const potentialPaths = [
+        path.join(process.cwd(), 'raw_data', resourceName),
+        path.join(process.cwd(), resourceName),
+        path.join(this.rawDataPath.replace(/knowledge_retrieval/g, ''), 'raw_data', resourceName)
+      ];
+      
+      // Find the first existing path
+      const existingPath = potentialPaths.find(potentialPath => {
+        const exists = fs.existsSync(potentialPath);
+        if (exists) {
+          this.logger.warn(`Found alternative path: ${potentialPath}`);
+        }
+        return exists;
+      });
+
+      // If no existing path found, throw an error
+      if (!existingPath) {
+        throw new Error(`No raw data found for resource: ${resourceName}`);
+      }
+
+      // Update rawDataPath to the existing path
+      rawDataPath = existingPath;
+    }
     
     // Get all raw files
     const rawFiles = await fs.readdir(rawDataPath);
+    const jsonFiles = rawFiles.filter(f => path.extname(f) === '.json');
+
+    // Check if any JSON files exist
+    if (jsonFiles.length === 0) {
+      this.logger.warn(`No JSON files found in raw data directory: ${rawDataPath}`);
+      throw new Error(`No JSON files found for resource: ${resourceName}`);
+    }
+
     const processedResults: ProcessedKnowledge[] = [];
 
-    for (const rawFile of rawFiles) {
-      if (path.extname(rawFile) !== '.json') continue;
+    this.logger.info(`Processing resource: ${resourceName} in ${mode} mode`);
 
+    for (const rawFile of jsonFiles) {
       const rawFilePath = path.join(rawDataPath, rawFile);
-      const rawData = await fs.readJSON(rawFilePath);
+      
+      try {
+        const rawData = await fs.readJSON(rawFilePath);
 
-      const processedKnowledge = await this.processContent(
-        rawData.html, 
-        rawData.url, 
-        mode
-      );
-
-      // Generate filename with correct extension
-      const processedFilename = `${path.parse(rawFile).name}.${mode === 'docs' ? 'md' : 'json'}`;
-      const processedFilePath = path.join(processedDataPath, processedFilename);
-
-      // Write ONLY the specified file type
-      if (mode === 'docs') {
-        await fs.writeFile(
-          processedFilePath,
-          processedKnowledge.content as string
+        const processedKnowledge = await this.processContent(
+          rawData.html, 
+          rawData.url, 
+          mode
         );
-      } else {
-        await fs.writeJSON(
-          processedFilePath,
-          processedKnowledge
-        );
+
+        // Generate filename with correct extension
+        const processedFilename = `${path.parse(rawFile).name}.${mode === 'docs' ? 'md' : 'json'}`;
+        const processedFilePath = path.join(processedDataPath, processedFilename);
+
+        // Write ONLY the specified file type
+        if (mode === 'docs') {
+          await fs.writeFile(
+            processedFilePath,
+            processedKnowledge.content as string
+          );
+        } else {
+          await fs.writeJSON(
+            processedFilePath,
+            processedKnowledge
+          );
+        }
+
+        processedResults.push(processedKnowledge);
+        this.logger.info(`Processed file: ${rawFile}`);
+      } catch (error) {
+        logError(this.logger, `Failed to process file: ${rawFile}`, error as Error, { 
+          resourceName, 
+          mode, 
+          filePath: rawFilePath 
+        });
       }
-
-      processedResults.push(processedKnowledge);
     }
 
     // Create a consolidated knowledge file
-    await fs.writeJSON(
-      path.join(this.processedDataPath, `${resourceName}_consolidated.json`),
-      processedResults
-    );
+    try {
+      await fs.writeJSON(
+        path.join(this.processedDataPath, `${resourceName}_consolidated.json`),
+        processedResults
+      );
+      this.logger.info(`Created consolidated file for resource: ${resourceName}`);
+    } catch (error) {
+      logError(this.logger, 'Failed to create consolidated file', error as Error, { 
+        resourceName 
+      });
+    }
 
+    this.logger.info(`Processed ${processedResults.length} files for resource: ${resourceName}`);
     return processedResults;
   }
 

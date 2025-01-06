@@ -156,3 +156,59 @@ MIT License - see LICENSE file for details.
 - AI integration with model selection
 - Custom headers support
 - Comprehensive test coverage
+
+# Knowledge Retrieval CLI Tool
+
+## Overview
+This is a self-contained executable for knowledge retrieval and web crawling, designed to help you collect and manage information from various online sources.
+
+## Installation
+
+### Windows Executable
+1. Download the executable from the `dist/exe/windows` directory.
+2. Place the executable in a directory of your choice.
+
+### Running the Application
+- Double-click the executable to launch the interactive CLI.
+- The first run will generate a default configuration file `know-bot.json` in the current working directory.
+
+## Configuration
+
+### Configuration File (`know-bot.json`)
+The application automatically creates and manages a configuration file with the following default structure:
+
+```json
+{
+  "dataDirectories": {
+    "raw": "./data/raw",
+    "processed": "./data/processed",
+    "logs": "./logs"
+  },
+  "crawlerSettings": {
+    "defaultDepth": 2,
+    "defaultTimeout": 10000
+  }
+}
+```
+
+### Customizing Configuration
+- Edit the `know-bot.json` file to customize:
+  - Data storage directories
+  - Crawler settings
+  - Logging preferences
+
+## Features
+- Interactive CLI for web crawling
+- Configurable data storage
+- Flexible web scraping
+- Automatic configuration management
+
+## Troubleshooting
+- Ensure you have write permissions in the executable's directory
+- Check the generated log files for detailed error information
+
+## License
+[Your License Here]
+
+## Contributing
+[Contribution Guidelines]

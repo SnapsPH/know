@@ -4,8 +4,13 @@
   "requestTimeout": 5000,
   "userAgent": "KnowledgeRetrievalBot/1.0",
   "baseStoragePath": "D:\\apps\\cascade-extender\\knowledge_retrieval\\knowledge_retrieval",
-  "rawDataDir": "raw_data",
-  "processedDataDir": "processed_data",
+  "dataDirectories": {
+    "raw": "D:\\apps\\cascade-extender\\knowledge_retrieval\\knowledge_retrieval\\raw_data",
+    "processed": "D:\\apps\\cascade-extender\\knowledge_retrieval\\knowledge_retrieval\\processed_data",
+    "logs": "D:\\apps\\cascade-extender\\knowledge_retrieval\\knowledge_retrieval\\logs"
+  },
   "defaultProcessingMode": "markdown",
-  "modelName": "llama3.2:3b"
+  "modelName": "llama3.2:3b",
+  "rawDataDir": "raw_data",
+  "processedDataDir": "processed_data"
 }

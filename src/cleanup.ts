@@ -2,20 +2,26 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as os from 'os';
 import { execSync } from 'child_process';
+import * as winston from 'winston';
+import { createLogger, logError } from './logger';
 
 class ResourceCleaner {
   private basePath: string;
   private rawDataPath: string;
   private processedDataPath: string;
+  private logger: winston.Logger;
 
   constructor(basePath: string = process.cwd()) {
     this.basePath = basePath;
     this.rawDataPath = path.resolve(basePath, 'raw_data');
     this.processedDataPath = path.resolve(basePath, 'processed_data');
+    
+    // Create module-specific logger
+    this.logger = createLogger('resource-cleaner');
   }
 
   async cleanupResources(mode: 'all' | 'raw' | 'processed' = 'all') {
-    console.log(`🧹 Performing ${mode} cleanup...`);
+    this.logger.info(`Performing ${mode} cleanup...`);
 
     try {
       // Ensure base directories exist
@@ -25,7 +31,7 @@ class ResourceCleaner {
       // Cleanup raw data
       if (mode === 'raw' || mode === 'all') {
         await this.forceCleanDirectory(this.rawDataPath);
-        console.log('✅ Raw data cleaned successfully');
+        this.logger.info('Raw data cleaned successfully');
       }
 
       // Cleanup processed data
@@ -36,12 +42,12 @@ class ResourceCleaner {
           const processedModePath = path.resolve(this.processedDataPath, processedMode);
           await this.forceCleanDirectory(processedModePath);
         }
-        console.log('✅ Processed data cleaned successfully');
+        this.logger.info('Processed data cleaned successfully');
       }
 
-      console.log('🎉 Cleanup completed successfully!');
+      this.logger.info('Cleanup completed successfully');
     } catch (error) {
-      console.error('❌ Cleanup failed:', error);
+      logError(this.logger, 'Cleanup failed', error as Error, { mode });
       process.exit(1);
     }
   }
@@ -51,6 +57,7 @@ class ResourceCleaner {
       // Check if directory exists
       if (!fs.existsSync(directoryPath)) {
         fs.ensureDirSync(directoryPath);
+        this.logger.info(`Created directory: ${directoryPath}`);
         return;
       }
 
@@ -73,17 +80,22 @@ class ResourceCleaner {
           } else {
             this.removeFileWithRetry(itemPath);
           }
+          this.logger.info(`Removed item: ${item}`);
         } catch (error) {
-          console.warn(`Warning: Could not remove ${itemPath} immediately:`, error);
+          logError(this.logger, `Could not remove ${item} immediately`, error as Error, {
+            itemPath
+          });
           
           // Last resort: force delete
           this.forceDelete(itemPath);
         }
       }
 
-      console.log(`Cleaned directory: ${directoryPath}`);
+      this.logger.info(`Cleaned directory: ${directoryPath}`);
     } catch (error) {
-      console.error(`Error cleaning ${directoryPath}:`, error);
+      logError(this.logger, `Error cleaning ${directoryPath}`, error as Error, {
+        directoryPath
+      });
       throw error;
     }
   }
