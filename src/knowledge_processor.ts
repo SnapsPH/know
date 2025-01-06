@@ -5,6 +5,7 @@ import * as cheerio from 'cheerio';
 import * as winston from 'winston';
 import * as os from 'os';
 import { createLogger, logError } from './logger';
+import { runWithConfigLoader } from './config-loader';
 
 export interface ProcessedKnowledge {
   source: string;
@@ -322,43 +323,36 @@ Processed Structured JSON:`;
       throw error;
     }
   }
+
+  async processAllResources(settings: any): Promise<void> {
+    // TO DO: implement processAllResources
+  }
 }
 
-async function main() {
-  const resourceName = process.argv[2];
-  const mode = process.argv[3] as 'docs' | 'json' | undefined;
-
-  if (!resourceName) {
-    console.error('Please provide a resource name');
-    process.exit(1);
-  }
-
-  // Read environment variables
-  const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
-  const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.2:3b';
-  const basePath = process.env.BASE_STORAGE_PATH 
-    ? path.resolve(process.cwd(), process.env.BASE_STORAGE_PATH.replace(/^\//, '').replace(/'/g, ''))
-    : process.cwd();
-
-  const processor = new KnowledgeProcessor(
-    ollamaUrl,
-    ollamaModel,
-    basePath,
-    basePath
-  );
-
+async function main(settings: any) {
   try {
-    const processingMode = mode === 'json' ? 'json' : 'docs';
-    await processor.processRawData(resourceName, processingMode);
-    console.log(`Processing completed for ${resourceName} in ${processingMode} mode`);
+    const processor = new KnowledgeProcessor(
+      process.env.OLLAMA_URL || 'http://localhost:11434',
+      settings.modelName,
+      settings.dataDirectories.raw,
+      settings.dataDirectories.processed
+    );
+
+    // Process all unprocessed resources
+    await processor.processAllResources({
+      processingMode: settings.defaultProcessingMode
+    });
+
+    console.log('Knowledge processing completed successfully');
   } catch (error) {
-    console.error('Processing failed:', error);
+    console.error('Knowledge processing failed:', error);
     process.exit(1);
   }
 }
 
+// Only run main if this file is the direct entry point
 if (require.main === module) {
-  main().catch(console.error);
+  runWithConfigLoader('Knowledge Processor', main);
 }
 
-export default KnowledgeProcessor;
+export default main;

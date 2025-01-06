@@ -6,6 +6,7 @@ import { URL } from 'url';
 import yargs from 'yargs';
 import * as winston from 'winston';
 import { SettingsManager } from './settings';
+import { runWithConfigLoader } from './config-loader';
 
 export interface RawCrawlResult {
   url: string;
@@ -352,117 +353,36 @@ export class Crawler extends KnowledgeCrawler {
 }
 
 // CLI Interface
-async function main() {
-  // Detailed logging about execution environment
-  console.log('Execution Environment Details:', {
-    execPath: process.execPath,
-    cwd: process.cwd(),
-    argv: process.argv,
-    __dirname: __dirname
-  });
+async function main(settings: any) {
+  const [resourceName, url, depthArg] = process.argv.slice(2);
+  const depth = depthArg ? parseInt(depthArg.split(':')[1] || '0', 10) : 0;
 
-  // Determine if running as a packaged executable
-  const isExe = process.execPath.toLowerCase().endsWith('knowledge-retrieval.exe');
-  const isInDist = process.execPath.includes('dist\\exe') || __dirname.includes('dist\\exe');
-  const isPackagedApp = isExe && isInDist;
-
-  console.log('Package Detection:', {
-    execPath: process.execPath,
-    __dirname: __dirname,
-    isExe: isExe,
-    isInDist: isInDist,
-    isPackagedApp: isPackagedApp
-  });
-
-  // Initialize settings to get the base storage path
-  const settingsManager = new SettingsManager();
-
-  // If packaged, explicitly set the config path to the executable directory
-  if (isPackagedApp) {
-    const exeConfigPath = path.join(path.dirname(process.execPath), 'know-bot.json');
-    
-    // If config exists in exe directory, use it
-    if (fs.existsSync(exeConfigPath)) {
-      console.log('Using config from executable directory:', exeConfigPath);
-      settingsManager.setConfigPath(exeConfigPath);
-    }
+  if (!resourceName || !url) {
+    console.error('Usage: crawler <resource_name> <url> depth:X');
+    process.exit(1);
   }
-
-  const settings = settingsManager.getSettings();
-
-  console.log('Config Path:', settingsManager.getConfigPath());
-  console.log('Loaded Settings:', JSON.stringify(settings, null, 2));
-
-  // Extract depth from command line arguments manually
-  let crawlDepth = settings.maxCrawlDepth; // Use configured depth
-  const depthArg = process.argv.find(arg => arg.startsWith('depth:') || arg === '--depth');
-  if (depthArg) {
-    // If it's '--depth', get the next argument
-    if (depthArg === '--depth') {
-      const depthIndex = process.argv.indexOf(depthArg);
-      crawlDepth = Number(process.argv[depthIndex + 1] || settings.maxCrawlDepth);
-    } else {
-      // If it's 'depth:X' format
-      crawlDepth = Number(depthArg.split(':')[1]);
-    }
-  }
-
-  const argv = await yargs(process.argv.slice(2))
-    .usage('$0 <resource_name> <start_url> [options]')
-    .positional('resource_name', {
-      describe: 'Name of the resource being crawled',
-      type: 'string'
-    })
-    .positional('start_url', {
-      describe: 'Starting URL to crawl',
-      type: 'string'
-    })
-    .option('depth', {
-      alias: 'd',
-      type: 'number',
-      description: 'Maximum crawl depth',
-      default: crawlDepth
-    })
-    .option('max-pages', {
-      alias: 'm',
-      type: 'number',
-      description: 'Maximum number of pages to crawl',
-      default: Number(process.env.MAX_CRAWL_PAGES) || settings.maxCrawlPages
-    })
-    .demandCommand(2, 'You must provide a resource name and start URL')
-    .help()
-    .parse();
-
-  const resourceName = argv._[0] as string;
-  const startUrl = argv._[1] as string;
-
-  console.log('Base Path:', settings.baseStoragePath);
-  console.log('Resource Name:', resourceName);
-  console.log('Start URL:', startUrl);
-  console.log('Crawl Depth:', crawlDepth);
 
   try {
+    console.log(`Crawling ${url} with depth: ${depth}`);
     const crawler = new KnowledgeCrawler(
       settings.baseStoragePath,
-      argv['max-pages'],
-      crawlDepth,
+      settings.maxCrawlPages,
+      depth,
       settings.requestTimeout || 10000,
       settings.userAgent || 'KnowledgeCrawler/1.0',
       resourceName,
       path.join(settings.baseStoragePath, 'logs')
     );
-
-    await crawler.crawl(startUrl, crawlDepth);
-    
-    console.log(`Crawling completed for ${resourceName}`);
+    await crawler.crawl(url, depth);
   } catch (error) {
-    console.error('Crawl failed with error:', error);
+    console.error('Crawling failed:', error);
     process.exit(1);
   }
 }
 
+// Only run main if this file is the direct entry point
 if (require.main === module) {
-  main().catch(console.error);
+  runWithConfigLoader('Crawler', main);
 }
 
 export default KnowledgeCrawler;

@@ -4,14 +4,15 @@ import * as os from 'os';
 import { execSync } from 'child_process';
 import * as winston from 'winston';
 import { createLogger, logError } from './logger';
+import { runWithConfigLoader } from './config-loader';
 
-class ResourceCleaner {
+export class ResourceCleaner {
   private basePath: string;
   private rawDataPath: string;
   private processedDataPath: string;
   private logger: winston.Logger;
 
-  constructor(basePath: string = process.cwd()) {
+  constructor(basePath: string) {
     this.basePath = basePath;
     this.rawDataPath = path.resolve(basePath, 'raw_data');
     this.processedDataPath = path.resolve(basePath, 'processed_data');
@@ -20,7 +21,7 @@ class ResourceCleaner {
     this.logger = createLogger('resource-cleaner');
   }
 
-  async cleanupResources(mode: 'all' | 'raw' | 'processed' = 'all') {
+  async cleanupResources(mode: 'all' | 'raw' | 'processed' = 'all'): Promise<void> {
     this.logger.info(`Performing ${mode} cleanup...`);
 
     try {
@@ -161,24 +162,24 @@ class ResourceCleaner {
   }
 }
 
-// CLI Entry Point
-async function main() {
-  const cleaner = new ResourceCleaner();
-  
-  // Get cleanup mode from command line
-  const mode = process.argv[2] as 'all' | 'raw' | 'processed' || 'all';
+// Default export for backwards compatibility
+export default ResourceCleaner;
 
+async function main(settings: any) {
   try {
-    await cleaner.cleanupResources(mode);
+    const cleaner = new ResourceCleaner(settings.baseStoragePath);
+    
+    // Optional: Add specific cleanup parameters from settings
+    await cleaner.cleanupResources('all');
+
+    console.log('Resource cleanup completed successfully');
   } catch (error) {
-    console.error('Cleanup failed:', error);
+    console.error('Resource cleanup failed:', error);
     process.exit(1);
   }
 }
 
-// Only run main if this file is being run directly
+// Only run main if this file is the direct entry point
 if (require.main === module) {
-  main();
+  runWithConfigLoader('Resource Cleanup', main);
 }
-
-export default ResourceCleaner;

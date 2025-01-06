@@ -25,14 +25,49 @@ function logError(error) {
   }
 }
 
+// Robust path resolution for configuration and executable location
+function getExecutableDirectory() {
+  // For packaged executable, use the directory of the executable
+  if (process.pkg) {
+    return path.dirname(process.execPath);
+  }
+  
+  // For development or Node.js runtime
+  return process.cwd();
+}
+
+function resolveConfigPath(configFileName = 'know-bot.json') {
+  const execDir = getExecutableDirectory();
+  const configPaths = [
+    path.join(execDir, configFileName),           // Executable directory
+    path.join(process.cwd(), configFileName),     // Current working directory
+    path.join(__dirname, '..', configFileName),   // Project root
+    path.join(__dirname, configFileName)          // Bin directory
+  ];
+
+  for (const configPath of configPaths) {
+    try {
+      if (fs.existsSync(configPath)) {
+        console.log(`Configuration found at: ${configPath}`);
+        return configPath;
+      }
+    } catch (error) {
+      // Silently continue if file check fails
+      continue;
+    }
+  }
+
+  throw new Error(`Configuration file ${configFileName} not found in any expected locations.`)
+}
+
 // Robust module finder
 function findModule(moduleName, additionalPaths = []) {
   const searchPaths = [
-    process.cwd(),
+    getExecutableDirectory(),
     __dirname,
     path.join(__dirname, '..'),
-    path.join(process.cwd(), 'dist'),
-    path.join(process.cwd(), 'node_modules'),
+    path.join(getExecutableDirectory(), 'dist'),
+    path.join(getExecutableDirectory(), 'node_modules'),
     ...additionalPaths
   ];
 
@@ -57,12 +92,25 @@ function findModule(moduleName, additionalPaths = []) {
   throw new Error(`Cannot find module: ${moduleName}`);
 }
 
+function loadConfiguration() {
+  try {
+    const configPath = resolveConfigPath();
+    return JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (error) {
+    logError(error);
+    throw error;
+  }
+}
+
 async function main() {
   try {
     // Log execution context
     console.log('Executable Path:', process.execPath);
     console.log('Current Working Directory:', process.cwd());
     console.log('__dirname:', __dirname);
+
+    // Load configuration
+    const config = loadConfiguration();
 
     // Find and load interactive module
     const interactivePath = findModule('interactive.js');

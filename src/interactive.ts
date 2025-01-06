@@ -6,7 +6,7 @@ import { SettingsManager, KnowBotSettings } from './settings';
 import { safePrompt, crawlPrompts, mainMenuChoices } from './cli/prompts';
 import { getResourceDetails, displayResourceDetails } from './cli/resource-management';
 import { runCrawlCommand } from './cli/crawl-management';
-import ResourceCleaner from './cleanup';
+import { ResourceCleaner } from './cleanup'; // Fix import
 import { KnowledgeProcessor } from './knowledge_processor';
 import * as winston from 'winston';
 import { createLogger, logError } from './logger';
@@ -14,7 +14,7 @@ import { createLogger, logError } from './logger';
 class KnowledgeInteractiveCLI extends EventEmitter {
   private basePath: string;
   private settings: SettingsManager;
-  private cleaner: ResourceCleaner;
+  private cleaner: ResourceCleaner; // Explicitly type as imported class
   private processor: KnowledgeProcessor;
   private logger: winston.Logger;
 
@@ -27,9 +27,11 @@ class KnowledgeInteractiveCLI extends EventEmitter {
 
     try {
       this.settings = new SettingsManager();
-      this.cleaner = new ResourceCleaner(this.basePath);
       
+      // Explicitly pass base path from settings
       const settingsData = this.settings.getSettings();
+      this.cleaner = new ResourceCleaner(settingsData.baseStoragePath);
+      
       this.processor = new KnowledgeProcessor(
         process.env.OLLAMA_URL || 'http://localhost:11434',
         settingsData.modelName,
@@ -479,8 +481,7 @@ class KnowledgeInteractiveCLI extends EventEmitter {
                 ]);
                 headers[key] = value;
                 break;
-              
-              case 'Remove Header':
+　　　　　　　case 'Remove Header':
                 const { headerToRemove } = await safePrompt<{ headerToRemove: string }>([
                   {
                     type: 'list',
@@ -491,8 +492,7 @@ class KnowledgeInteractiveCLI extends EventEmitter {
                 ]);
                 delete headers[headerToRemove];
                 break;
-              
-              case 'Return to Settings':
+　　　　　　　case 'Return to Settings':
                 settingsToUpdate.headers = headers;
                 break;
             }
@@ -500,8 +500,7 @@ class KnowledgeInteractiveCLI extends EventEmitter {
             if (action === 'Return to Settings') break;
           }
           break;
-        
-        case 'Return to Main Menu':
+　　　　　case 'Return to Main Menu':
           await this.start();
           return;
       }

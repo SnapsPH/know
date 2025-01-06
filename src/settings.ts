@@ -23,6 +23,7 @@ export interface KnowBotSettings {
   
   // Custom Headers (optional)
   headers?: Record<string, string>;
+  version?: number;
 }
 
 export class SettingsManager {
@@ -39,38 +40,33 @@ export class SettingsManager {
       logs: path.join(process.cwd(), 'knowledge_retrieval', 'logs')
     },
     defaultProcessingMode: 'markdown',
-    modelName: 'ollama/mistral'
+    modelName: 'llama3.2:3b',
+    version: 1
   };
 
   private configPath: string;
   private settings: KnowBotSettings;
 
   constructor(configPath?: string) {
-    // Use provided config path or determine it dynamically
+    // Determine the most appropriate config path
     this.configPath = this.determineConfigPath(configPath);
     
     // Attempt to load settings from the config file
     this.settings = this.loadOrCreateSettings();
 
     // Additional logging for debugging
-    console.log('Final Config Path:', this.configPath);
-    console.log('Final Settings:', JSON.stringify(this.settings, null, 2));
+    console.log('📦 Package Detection:', {
+      execPath: process.execPath,
+      __dirname: __dirname,
+      cwd: process.cwd(),
+      isPackaged: this.isPackagedApp()
+    });
+
+    // Logging config resolution details
+    console.log('Searching for config in paths:', this.getPossibleConfigPaths());
 
     // Override base storage path for packaged apps if not explicitly set
-    if (this.isPackagedApp() && 
-        this.settings.baseStoragePath.includes('knowledge_retrieval\\knowledge_retrieval')) {
-      const exeDir = path.dirname(process.execPath);
-      this.settings.baseStoragePath = path.join(exeDir, 'knowledge_retrieval');
-      
-      // Update data directories to match new base path
-      this.settings.dataDirectories = {
-        raw: path.join(this.settings.baseStoragePath, 'raw_data'),
-        processed: path.join(this.settings.baseStoragePath, 'processed_data'),
-        logs: path.join(this.settings.baseStoragePath, 'logs_data')
-      };
-
-      console.log('🔧 Overriding base storage path for packaged app:', this.settings.baseStoragePath);
-    }
+    this.adjustBaseStoragePathForPackagedApp();
 
     // Initialize directories based on the loaded/modified settings
     this.initializeDirectories();
@@ -83,108 +79,145 @@ export class SettingsManager {
     this.settings = this.loadOrCreateSettings();
   }
 
+  private getPossibleConfigPaths(): string[] {
+    const potentialPaths = [
+      // Executable directory
+      path.dirname(process.execPath),
+      
+      // Dist directories
+      path.join(path.dirname(process.execPath), 'dist', 'exe', 'windows'),
+      path.join(path.dirname(process.execPath), 'dist', 'exe'),
+      path.join(path.dirname(process.execPath), 'dist'),
+      
+      // Project root directories
+      process.cwd(),
+      path.resolve(process.cwd(), '..'),
+      path.resolve(__dirname, '..'),
+      path.resolve(__dirname, '..', '..'),
+      
+      // User home directory
+      os.homedir()
+    ];
+
+    // Deduplicate and map to config file paths
+    const configPaths = potentialPaths
+      .map(dir => path.join(dir, SettingsManager.DEFAULT_CONFIG_FILE))
+      .filter((configPath, index, self) => 
+        self.indexOf(configPath) === index // Remove duplicates
+      );
+
+    console.log('🔍 Searching for configuration in paths:', configPaths);
+    return configPaths;
+  }
+
+  private determineConfigPath(providedPath?: string): string {
+    // If a path is explicitly provided, use it
+    if (providedPath && fs.existsSync(providedPath)) {
+      console.log(`📋 Using explicitly provided config: ${providedPath}`);
+      return providedPath;
+    }
+
+    // Search through possible paths
+    const possiblePaths = this.getPossibleConfigPaths();
+    
+    for (const configPath of possiblePaths) {
+      try {
+        if (fs.existsSync(configPath)) {
+          console.log(`📋 Config found at: ${configPath}`);
+          return configPath;
+        }
+      } catch (error) {
+        console.warn(`Error checking config path ${configPath}:`, error);
+      }
+    }
+
+    // If no config found, create in the most appropriate location
+    const defaultConfigPath = path.join(
+      this.isPackagedApp() 
+        ? path.dirname(process.execPath) 
+        : process.cwd(), 
+      SettingsManager.DEFAULT_CONFIG_FILE
+    );
+    
+    console.log(`✨ Created default config at: ${defaultConfigPath}`);
+    this.createDefaultConfig(defaultConfigPath);
+    
+    return defaultConfigPath;
+  }
+
+  private createDefaultConfig(configPath: string): void {
+    try {
+      // Ensure directory exists
+      fs.ensureDirSync(path.dirname(configPath));
+      
+      // Adjust base storage path for packaged vs development
+      const defaultSettings = { 
+        ...SettingsManager.DEFAULT_SETTINGS,
+        baseStoragePath: this.isPackagedApp()
+          ? path.join(path.dirname(process.execPath), 'knowledge_retrieval')
+          : path.join(process.cwd(), 'knowledge_retrieval')
+      };
+
+      // Write default settings
+      fs.writeFileSync(
+        configPath, 
+        JSON.stringify(defaultSettings, null, 2)
+      );
+
+      console.log('📝 Default configuration created:', defaultSettings);
+    } catch (error) {
+      console.error('❌ Failed to create default config:', error);
+    }
+  }
+
   private isPackagedApp(): boolean {
     // Check if running from the packaged executable
-    const isExe = process.execPath.toLowerCase().endsWith('knowledge-retrieval.exe');
-    const isInDist = process.execPath.includes('dist\\exe') || __dirname.includes('dist\\exe');
+    const isExe = process.execPath.toLowerCase().includes('knowledge-retrieval.exe');
+    const isInDist = process.execPath.includes('dist\\exe') || 
+                     __dirname.includes('dist\\exe') || 
+                     process.cwd().includes('dist\\exe');
     
-    console.log('Package Detection:', {
+    console.log('📦 Package Detection:', {
       execPath: process.execPath,
       __dirname: __dirname,
-      isExe: isExe,
-      isInDist: isInDist
+      cwd: process.cwd(),
+      isExe,
+      isInDist: process.execPath.includes('dist\\exe') || 
+                __dirname.includes('dist\\exe') || 
+                process.cwd().includes('dist\\exe')
     });
 
     return isExe && isInDist;
   }
 
-  private determineConfigPath(providedPath?: string): string {
-    const isPackagedApp = this.isPackagedApp();
+  private adjustBaseStoragePathForPackagedApp() {
+    const isPackaged = this.isPackagedApp();
+    const exeDir = path.dirname(process.execPath);
+    const currentBasePath = this.settings.baseStoragePath;
 
-    // Possible paths to search for config, with special handling for packaged apps
-    const possiblePaths = [
-      providedPath,
-      isPackagedApp ? path.dirname(process.execPath) : null,
-      isPackagedApp ? path.resolve(path.dirname(process.execPath), '..') : null,
-      isPackagedApp ? path.resolve(path.dirname(process.execPath), '..', '..') : null,
-      process.execPath ? path.dirname(process.execPath) : null,
-      process.cwd(),
-      os.homedir()
-    ].filter((p): p is string => p !== null && p !== undefined);
+    // Check if base path needs adjustment
+    const needsAdjustment = 
+      isPackaged && 
+      (!currentBasePath.includes(exeDir) || 
+       currentBasePath.includes(process.cwd()));
 
-    // Debugging log to show all paths being checked
-    console.log('Searching for config in paths:', possiblePaths);
-
-    for (const basePath of possiblePaths) {
-      const potentialConfigPath = path.join(basePath, SettingsManager.DEFAULT_CONFIG_FILE);
+    if (needsAdjustment) {
+      const newBasePath = path.join(exeDir, 'knowledge_retrieval');
       
-      // Log each path being checked
-      console.log(`Checking potential config path: ${potentialConfigPath}`);
+      this.settings.baseStoragePath = newBasePath;
       
-      if (fs.existsSync(potentialConfigPath)) {
-        console.log(`📋 Config found at: ${potentialConfigPath}`);
-        return potentialConfigPath;
-      }
+      // Update data directories to match new base path
+      this.settings.dataDirectories = {
+        raw: path.join(newBasePath, 'raw_data'),
+        processed: path.join(newBasePath, 'processed_data'),
+        logs: path.join(newBasePath, 'logs')
+      };
+
+      console.log('🔧 Adjusted base storage path for packaged app:', {
+        oldPath: currentBasePath,
+        newPath: newBasePath
+      });
     }
-
-    // If no existing config, create in the most appropriate location
-    const defaultConfigPath = isPackagedApp
-      ? path.join(path.dirname(process.execPath), SettingsManager.DEFAULT_CONFIG_FILE)
-      : path.join(process.cwd(), SettingsManager.DEFAULT_CONFIG_FILE);
-    
-    try {
-      // Ensure directory exists
-      fs.ensureDirSync(path.dirname(defaultConfigPath));
-      
-      // Write default settings if file doesn't exist
-      if (!fs.existsSync(defaultConfigPath)) {
-        // Use the configuration from the main project if running as packaged app
-        const sourceConfigPath = path.join(
-          path.resolve(__dirname, '..', '..'), 
-          SettingsManager.DEFAULT_CONFIG_FILE
-        );
-
-        let settingsToWrite = SettingsManager.DEFAULT_SETTINGS;
-        
-        // Try to read settings from source config if it exists
-        if (fs.existsSync(sourceConfigPath)) {
-          try {
-            const sourceSettings = JSON.parse(
-              fs.readFileSync(sourceConfigPath, 'utf-8')
-            );
-            settingsToWrite = {
-              ...SettingsManager.DEFAULT_SETTINGS,
-              ...sourceSettings
-            };
-          } catch (readError) {
-            console.warn('Could not read source config:', readError);
-          }
-        }
-
-        // Update base storage path for packaged app
-        if (isPackagedApp) {
-          settingsToWrite.baseStoragePath = path.dirname(process.execPath);
-          
-          // Update data directories to match new base path
-          settingsToWrite.dataDirectories = {
-            raw: path.join(settingsToWrite.baseStoragePath, 'raw_data'),
-            processed: path.join(settingsToWrite.baseStoragePath, 'processed_data'),
-            logs: path.join(settingsToWrite.baseStoragePath, 'logs_data')
-          };
-        }
-
-        fs.writeFileSync(
-          defaultConfigPath, 
-          JSON.stringify(settingsToWrite, null, 2)
-        );
-        
-        console.log(`✨ Created default config at: ${defaultConfigPath}`);
-      }
-    } catch (writeError) {
-      console.error('❌ Failed to create default config:', writeError);
-    }
-
-    return defaultConfigPath;
   }
 
   private initializeDirectories(): void {
@@ -297,9 +330,23 @@ export class SettingsManager {
           const loadedSettings = JSON.parse(fileContent);
           
           // Merge loaded settings with default settings to ensure all fields are present
-          const mergedSettings = {
+          const mergedSettings: KnowBotSettings = {
             ...SettingsManager.DEFAULT_SETTINGS,
-            ...loadedSettings
+            ...loadedSettings,
+            // Ensure data directories are absolute paths
+            dataDirectories: {
+              raw: path.isAbsolute(loadedSettings.dataDirectories?.raw ?? '') 
+                ? loadedSettings.dataDirectories.raw 
+                : path.join(this.settings.baseStoragePath, 'raw_data'),
+              processed: path.isAbsolute(loadedSettings.dataDirectories?.processed ?? '') 
+                ? loadedSettings.dataDirectories.processed 
+                : path.join(this.settings.baseStoragePath, 'processed_data'),
+              logs: path.isAbsolute(loadedSettings.dataDirectories?.logs ?? '') 
+                ? loadedSettings.dataDirectories.logs 
+                : path.join(this.settings.baseStoragePath, 'logs')
+            },
+            // Ensure version is set
+            version: loadedSettings.version ?? SettingsManager.DEFAULT_SETTINGS.version
           };
 
           console.log(`📋 Configuration loaded from: ${this.configPath}`);
@@ -308,6 +355,7 @@ export class SettingsManager {
           console.log(`   - Processing Mode: ${mergedSettings.defaultProcessingMode}`);
           console.log(`   - Max Crawl Depth: ${mergedSettings.maxCrawlDepth}`);
           console.log(`   - Base Storage Path: ${mergedSettings.baseStoragePath}`);
+          console.log(`   - Version: ${mergedSettings.version}`);
 
           return mergedSettings;
         } catch (parseError) {
@@ -384,5 +432,61 @@ export class SettingsManager {
 
   public getSettings(): KnowBotSettings {
     return { ...this.settings };
+  }
+
+  public async validateSettings(): Promise<void> {
+    try {
+      // Check if base storage path exists
+      if (!fs.existsSync(this.settings.baseStoragePath)) {
+        throw new Error(`Base storage path does not exist: ${this.settings.baseStoragePath}`);
+      }
+
+      // Check if data directories exist
+      const dataDirectories = this.settings.dataDirectories;
+      const directoryKeys = Object.keys(dataDirectories) as Array<keyof typeof dataDirectories>;
+      
+      for (const key of directoryKeys) {
+        const dirPath = dataDirectories[key];
+        if (!fs.existsSync(dirPath)) {
+          throw new Error(`Data directory does not exist: ${dirPath}`);
+        }
+      }
+
+      console.log('✅ Settings are valid');
+    } catch (error) {
+      console.error('❌ Error validating settings:', error);
+      throw error;
+    }
+  }
+
+  public async checkForUpdates(): Promise<void> {
+    try {
+      // Check if a newer version of the configuration file exists
+      const latestConfigPath = path.join(__dirname, 'latest-config.json');
+      if (fs.existsSync(latestConfigPath)) {
+        const latestConfig = JSON.parse(fs.readFileSync(latestConfigPath, 'utf-8'));
+        
+        // Add version to the interface
+        interface VersionedConfig extends KnowBotSettings {
+          version?: number;
+        }
+
+        const typedLatestConfig = latestConfig as VersionedConfig;
+        const typedCurrentSettings = this.settings as VersionedConfig;
+
+        // Only update if version exists and is newer
+        if (typedLatestConfig.version && 
+            (!typedCurrentSettings.version || 
+             typedLatestConfig.version > typedCurrentSettings.version)) {
+          console.log('📣 A newer version of the configuration file is available');
+          await this.saveSettings({
+            ...latestConfig,
+            version: typedLatestConfig.version
+          });
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error checking for updates:', error);
+    }
   }
 }
