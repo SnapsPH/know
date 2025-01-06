@@ -111,15 +111,20 @@ export class SettingsManager {
   }
 
   private determineConfigPath(providedPath?: string): string {
-    // If a path is explicitly provided, use it
     if (providedPath && fs.existsSync(providedPath)) {
       console.log(`📋 Using explicitly provided config: ${providedPath}`);
       return providedPath;
     }
 
-    // Search through possible paths
     const possiblePaths = this.getPossibleConfigPaths();
     
+    // Prioritize executable directory
+    const exeDirPath = path.join(path.dirname(process.execPath), SettingsManager.DEFAULT_CONFIG_FILE);
+    if (fs.existsSync(exeDirPath)) {
+      console.log(`📋 Config found in executable directory: ${exeDirPath}`);
+      return exeDirPath;
+    }
+
     for (const configPath of possiblePaths) {
       try {
         if (fs.existsSync(configPath)) {
@@ -131,7 +136,6 @@ export class SettingsManager {
       }
     }
 
-    // If no config found, create in the most appropriate location
     const defaultConfigPath = path.join(
       this.isPackagedApp() 
         ? path.dirname(process.execPath) 
@@ -195,7 +199,6 @@ export class SettingsManager {
     const exeDir = path.dirname(process.execPath);
     const currentBasePath = this.settings.baseStoragePath;
 
-    // Check if base path needs adjustment
     const needsAdjustment = 
       isPackaged && 
       (!currentBasePath.includes(exeDir) || 
@@ -206,7 +209,6 @@ export class SettingsManager {
       
       this.settings.baseStoragePath = newBasePath;
       
-      // Update data directories to match new base path
       this.settings.dataDirectories = {
         raw: path.join(newBasePath, 'raw_data'),
         processed: path.join(newBasePath, 'processed_data'),

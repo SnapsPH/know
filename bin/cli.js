@@ -27,22 +27,19 @@ function logError(error) {
 
 // Robust path resolution for configuration and executable location
 function getExecutableDirectory() {
-  // For packaged executable, use the directory of the executable
   if (process.pkg) {
     return path.dirname(process.execPath);
   }
-  
-  // For development or Node.js runtime
   return process.cwd();
 }
 
 function resolveConfigPath(configFileName = 'know-bot.json') {
   const execDir = getExecutableDirectory();
   const configPaths = [
-    path.join(execDir, configFileName),           // Executable directory
-    path.join(process.cwd(), configFileName),     // Current working directory
-    path.join(__dirname, '..', configFileName),   // Project root
-    path.join(__dirname, configFileName)          // Bin directory
+    path.join(execDir, configFileName),  // Executable directory
+    path.join(process.cwd(), configFileName),  // Current working directory
+    path.join(__dirname, '..', configFileName),  // Project root
+    path.join(__dirname, configFileName)  // Bin directory
   ];
 
   for (const configPath of configPaths) {
@@ -52,12 +49,11 @@ function resolveConfigPath(configFileName = 'know-bot.json') {
         return configPath;
       }
     } catch (error) {
-      // Silently continue if file check fails
       continue;
     }
   }
 
-  throw new Error(`Configuration file ${configFileName} not found in any expected locations.`)
+  throw new Error(`Configuration file ${configFileName} not found in any expected locations.`);
 }
 
 // Robust module finder
@@ -146,3 +142,8 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 main();
+
+module.exports = {
+  resolveConfigPath,
+  getExecutableDirectory
+};
